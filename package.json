@@ -1,0 +1,33 @@
+{
+  "name": "sample-vladimir-trifonov",
+  "version": "0.0.1",
+  "description": "Payments monitoring service",
+  "main": "index.js",
+  "scripts": {
+    "start": "NODE_ENV=development node .",
+    "lint": "standard --fix",
+    "test": "NODE_ENV=test tape test/*"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/paylike/sample-vladimir-trifonov.git"
+  },
+  "author": "Vladimir Trifonov",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/paylike/sample-vladimir-trifonov/issues"
+  },
+  "homepage": "https://github.com/paylike/sample-vladimir-trifonov#readme",
+  "dependencies": {
+    "json-parse-safe": "1.0.5"
+  },
+  "engines": {
+    "node": ">=8"
+  },
+  "devDependencies": {
+    "sinon": "6.2.0",
+    "standard": "12.0.1",
+    "tape": "4.9.1",
+    "timekeeper": "2.1.2"
+  }
+}

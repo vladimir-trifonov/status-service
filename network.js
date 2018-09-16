@@ -1,12 +1,9 @@
 'use strict'
 
-const Readable = require('stream').Readable
 const {
   serialize,
   momentUnix,
-  log: logger,
-  toMsg,
-  bufToJSON
+  log: logger
 } = require('./utils')
 
 module.exports.createSource = createSource
@@ -25,8 +22,9 @@ const getRandomInt = (min, max) => Math.round(getRandomNum(min, max))
 const sendPayment = () => getRandomInt(0, 1) === 0
 const getSendMsgDelay = () => getRandomNum(600, 3000)
 
-function createSource () {
-  const rs = new Readable({ objectMode: true })
+function createSource (end, cb) {
+  if (end) return cb(end)
+
   const parties = [...Array(PARTIES_COUNT).keys()]
 
   const getRandomParty = () => parties[getRandomInt(0, parties.length - 1)]
@@ -53,16 +51,12 @@ function createSource () {
       created: momentUnix(),
       party: getRandomParty()
     }
-    this.push(toMsg(body))
+    cb(null, body)
   }
 
-  rs._read = function () {
-    setTimeout(sendMsg.bind(this), getSendMsgDelay())
-  }
-
-  return rs
+  setTimeout(sendMsg, getSendMsgDelay())
 }
 
 function respond (src, res) {
-  log('Response received:', serialize(bufToJSON(res)), 'for event:', serialize(bufToJSON(src)))
+  log('Response received:', serialize(res), 'for event:', serialize(src))
 }

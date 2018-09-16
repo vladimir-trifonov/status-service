@@ -1,6 +1,8 @@
 'use strict'
 
+const pull = require('pull-stream')
+
 const network = require('./network')
 const service = require('./service')
 
-network.createSource().pipe(service({ network }))
+pull(network.createSource, service(network.respond))

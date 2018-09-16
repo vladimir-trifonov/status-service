@@ -6,7 +6,7 @@
   "scripts": {
     "start": "NODE_ENV=development node .",
     "lint": "standard --fix",
-    "test": "NODE_ENV=test tape test/*"
+    "test": "npm run lint & NODE_ENV=test tape ./test.js"
   },
   "repository": {
     "type": "git",
@@ -19,7 +19,7 @@
   },
   "homepage": "https://github.com/paylike/sample-vladimir-trifonov#readme",
   "dependencies": {
-    "json-parse-safe": "1.0.5"
+    "pull-stream": "3.6.9"
   },
   "engines": {
     "node": ">=8"

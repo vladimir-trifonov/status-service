@@ -1,14 +1,11 @@
 'use strict'
 
-const Writable = require('stream').Writable
 const {
   serialize,
   momentUnix,
   log: logger,
   msToSes,
-  secToMs,
-  toMsg,
-  bufToJSON
+  secToMs
 } = require('./utils')
 
 const {
@@ -22,89 +19,69 @@ const HEALTH = 'health'
 const LOWER_BOUND = 10
 const HIGHER_BOUND = 20
 
-let startTime
-let { parties: createPartiesDb } = require('./db')
-
 const log = LOG_LEVEL === 'debug' ? logger('Health Service') : () => {}
-const isReadableStream = (stream) => stream instanceof require('stream').Readable
 
-module.exports = function ({ stream, network }) {
-  startTime = momentUnix()
-  const ws = new Writable()
-  const partiesDb = createPartiesDb()
-  const handleMessageWithParties = handleMessage(partiesDb)
+module.exports = function (respond) {
+  return (read) => {
+    const startTime = momentUnix()
+    const partiesData = {}
+    const handleMessageWithParties = handleMessage({ startTime, partiesData })
 
-  ws._write = function (buf, enc, next) {
-    handleMessageWithParties(buf, bufToJSON(buf), network.respond)
-    next()
-  }
+    read(null, function next (end, data) {
+      if (end) {
+        // Clear the intervals after the stream has been closed
+        Object.keys(partiesData).forEach((partyId) => {
+          const timeout = partiesData[partyId].timeout
+          timeout && clearTimeout(timeout)
+        })
+        return
+      }
 
-  ws.on('finish', () => {
-    // Clear the intervals after the stream has been closed
-    Object.keys(partiesDb.get()).forEach((partyId) => {
-      const interval = partiesDb.get(partyId).interval
-      interval && clearInterval(interval)
-      // Close db connection if we have such an option
-      // ...
+      handleMessageWithParties(data, data, respond)
+      read(null, next)
     })
-  })
-
-  if (stream) {
-    const source = stream.createSource()
-    isReadableStream(source) && source.pipe(ws)
-  } else return ws
+  }
 }
 
-function handleMessage (partiesDb) {
+function handleMessage ({ startTime, partiesData }) {
   return (originalEvent, event = {}, respond) => {
     const { type: eventType, party: partyId, parties, success } = event
     log('Request received:', serialize(event))
 
     switch (eventType) {
       case PAYMENT:
-        process.nextTick(() => updateStatus(partiesDb, { parties, success }))
+        updateStatus({ startTime, partiesData }, { parties, success })
         break
       case HEALTH:
-        process.nextTick(() => {
-          const status = genStatusEvent(partiesDb, partyId)
-          typeof status !== 'undefined' && respond(originalEvent, toMsg(status))
-        })
+        const status = genStatusEvent(partiesData, partyId)
+        typeof status !== 'undefined' && respond(originalEvent, status)
         break
     }
   }
 }
 
-function genStatusEvent (partiesDb, partyId) {
-  const party = partiesDb.get(partyId)
-  if (!party) return
+function genStatusEvent (partiesData, partyId) {
+  const party = partiesData[partyId]
+  if (!party || party.reactionTime === null) return
 
-  const hasReactionTime = party.reactionTime !== null
   const hasHealthyPayment = !!party.lastHealthyReceivedAt
-  let status
-
-  if (hasReactionTime) {
-    const degradedTimeOffset = momentUnix() - msToSes(party.reactionTime)
-    status = (hasHealthyPayment && party.lastHealthyReceivedAt >= degradedTimeOffset) ? 1 : 0
-  } else {
-    status = hasHealthyPayment ? 1 : 0
-  }
+  const degradedTimeOffset = momentUnix() - msToSes(party.reactionTime)
+  const healthy = (hasHealthyPayment && party.lastHealthyReceivedAt >= degradedTimeOffset)
 
   return {
-    type: 'healthy',
+    type: 'health-status',
     created: momentUnix(),
     party: partyId,
-    status
+    healthy
   }
 }
 
-function calcReactionTime (partiesDb, partyId) {
-  const { reactionTime } = partiesDb.get(partyId)
+function getReactionTimeTimeout (partiesData, partyId) {
+  const { reactionTime } = partiesData[partyId]
 
-  return setInterval(() => {
-    const party = partiesDb.get(partyId)
+  return setTimeout(() => {
+    const party = partiesData[partyId]
     let reactionTime = party.reactionTime
-
-    clearInterval(party.interval)
 
     if (party.count) {
       const decReactionTime = reactionTime / 2
@@ -115,22 +92,22 @@ function calcReactionTime (partiesDb, partyId) {
           : reactionTime
     }
 
-    partiesDb.set(partyId, {
+    partiesData[partyId] = {
       ...party,
       count: 0,
       reactionTime,
-      interval: calcReactionTime(partiesDb, partyId)
-    })
+      timeout: getReactionTimeTimeout(partiesData, partyId)
+    }
 
     log('Reaction Time for party:', partyId, 'has been updated to:', msToSes(reactionTime), 'seconds')
   }, reactionTime)
 }
 
-function updateStatus (partiesDb, { parties = [], success }) {
+function updateStatus ({ startTime, partiesData }, { parties = [], success }) {
   const currentTime = momentUnix()
 
   parties.forEach((partyId) => {
-    const party = partiesDb.get(partyId)
+    const party = partiesData[partyId]
     let updated
 
     if (party) {
@@ -142,7 +119,7 @@ function updateStatus (partiesDb, { parties = [], success }) {
         count: resetCount ? 0 : party.count + 1,
         ...canSetReactionTime && {
           reactionTime: secToMs(currentTime - startTime),
-          interval: calcReactionTime(partiesDb, partyId)
+          timeout: getReactionTimeTimeout(partiesData, partyId)
         },
         ...success && { lastHealthyReceivedAt: currentTime }
       }
@@ -150,11 +127,11 @@ function updateStatus (partiesDb, { parties = [], success }) {
       updated = {
         count: 1,
         reactionTime: null,
-        interval: null,
+        timeout: null,
         lastHealthyReceivedAt: success ? currentTime : null
       }
     }
 
-    partiesDb.set(partyId, updated)
+    partiesData[partyId] = updated
   })
 }

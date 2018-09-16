@@ -2,7 +2,6 @@
 
 const {
   serialize,
-  momentUnix,
   log: logger
 } = require('./utils')
 
@@ -43,12 +42,12 @@ function createSource (end, cb) {
   const sendMsg = function () {
     const body = sendPayment() ? {
       type: 'payment',
-      created: momentUnix(),
+      created: new Date(),
       parties: getRandomParties(),
       success: getRandomInt(0, 1) === 1
     } : {
       type: 'health',
-      created: momentUnix(),
+      created: new Date(),
       party: getRandomParty()
     }
     cb(null, body)

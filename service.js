@@ -2,10 +2,7 @@
 
 const {
   serialize,
-  momentUnix,
-  log: logger,
-  msToSes,
-  secToMs
+  log: logger
 } = require('./utils')
 
 const {
@@ -21,18 +18,22 @@ const HIGHER_BOUND = 20
 
 const log = LOG_LEVEL === 'debug' ? logger('Health Service') : () => {}
 
-module.exports = function (respond) {
+module.exports = function ({ setTimeout, respond }) {
   return (read) => {
-    const startTime = momentUnix()
+    const startTime = new Date().getTime()
     const partiesData = {}
-    const handleMessageWithParties = handleMessage({ startTime, partiesData })
+    const handleMessageWithParties = handleMessage({ startTime, partiesData, setTimeout })
 
     read(null, function next (end, data) {
       if (end) {
         // Clear the intervals after the stream has been closed
         Object.keys(partiesData).forEach((partyId) => {
           const timeout = partiesData[partyId].timeout
-          timeout && clearTimeout(timeout)
+          if (timeout) {
+            try {
+              clearTimeout(timeout)
+            } catch (e) {}
+          }
         })
         return
       }
@@ -43,40 +44,73 @@ module.exports = function (respond) {
   }
 }
 
-function handleMessage ({ startTime, partiesData }) {
+function handleMessage ({ startTime, partiesData, setTimeout }) {
   return (originalEvent, event = {}, respond) => {
     const { type: eventType, party: partyId, parties, success } = event
     log('Request received:', serialize(event))
 
     switch (eventType) {
       case PAYMENT:
-        updateStatus({ startTime, partiesData }, { parties, success })
+        updateStatus({ startTime, partiesData, setTimeout }, { parties, success })
         break
       case HEALTH:
-        const status = genStatusEvent(partiesData, partyId)
+        const status = getStatusEvent(partiesData, partyId)
         typeof status !== 'undefined' && respond(originalEvent, status)
         break
     }
   }
 }
 
-function genStatusEvent (partiesData, partyId) {
+function getStatusEvent (partiesData, partyId) {
   const party = partiesData[partyId]
   if (!party || party.reactionTime === null) return
 
   const hasHealthyPayment = !!party.lastHealthyReceivedAt
-  const degradedTimeOffset = momentUnix() - msToSes(party.reactionTime)
+  const degradedTimeOffset = new Date().getTime() - party.reactionTime
   const healthy = (hasHealthyPayment && party.lastHealthyReceivedAt >= degradedTimeOffset)
 
   return {
     type: 'health-status',
-    created: momentUnix(),
+    created: new Date(),
     party: partyId,
     healthy
   }
 }
 
-function getReactionTimeTimeout (partiesData, partyId) {
+function updateStatus ({ startTime, partiesData, setTimeout }, { parties = [], success }) {
+  const currentTime = new Date().getTime()
+
+  parties.forEach((partyId) => {
+    const party = partiesData[partyId]
+    let updated
+
+    if (party) {
+      const canSetReactionTime = (party.reactionTime === null && party.count + 1 === LOWER_BOUND)
+      const resetCount = canSetReactionTime
+
+      updated = {
+        ...party,
+        count: resetCount ? 0 : party.count + 1,
+        ...canSetReactionTime && {
+          reactionTime: currentTime - startTime,
+          timeout: setReactionTime({ partiesData, setTimeout }, partyId)
+        },
+        ...success && { lastHealthyReceivedAt: currentTime }
+      }
+    } else {
+      updated = {
+        count: 1,
+        reactionTime: null,
+        timeout: null,
+        lastHealthyReceivedAt: success ? currentTime : null
+      }
+    }
+
+    partiesData[partyId] = updated
+  })
+}
+
+function setReactionTime ({ partiesData, setTimeout }, partyId) {
   const { reactionTime } = partiesData[partyId]
 
   return setTimeout(() => {
@@ -96,42 +130,9 @@ function getReactionTimeTimeout (partiesData, partyId) {
       ...party,
       count: 0,
       reactionTime,
-      timeout: getReactionTimeTimeout(partiesData, partyId)
+      timeout: setReactionTime({ partiesData, setTimeout }, partyId)
     }
 
-    log('Reaction Time for party:', partyId, 'has been updated to:', msToSes(reactionTime), 'seconds')
+    log('Reaction Time for party:', partyId, 'has been updated to:', reactionTime, 'ms')
   }, reactionTime)
-}
-
-function updateStatus ({ startTime, partiesData }, { parties = [], success }) {
-  const currentTime = momentUnix()
-
-  parties.forEach((partyId) => {
-    const party = partiesData[partyId]
-    let updated
-
-    if (party) {
-      const canSetReactionTime = (party.reactionTime === null && party.count + 1 === LOWER_BOUND)
-      const resetCount = canSetReactionTime
-
-      updated = {
-        ...party,
-        count: resetCount ? 0 : party.count + 1,
-        ...canSetReactionTime && {
-          reactionTime: secToMs(currentTime - startTime),
-          timeout: getReactionTimeTimeout(partiesData, partyId)
-        },
-        ...success && { lastHealthyReceivedAt: currentTime }
-      }
-    } else {
-      updated = {
-        count: 1,
-        reactionTime: null,
-        timeout: null,
-        lastHealthyReceivedAt: success ? currentTime : null
-      }
-    }
-
-    partiesData[partyId] = updated
-  })
 }

@@ -23,7 +23,7 @@ module.exports = function ({ setTimeout, respond }) {
 
     read(null, function next (end, data) {
       if (end) {
-        // Clear the intervals after the stream has been closed
+        // Clear the timers after the stream has been closed
         Object.keys(partiesData).forEach((partyId) => {
           const timeout = partiesData[partyId].timeout
           if (timeout) {

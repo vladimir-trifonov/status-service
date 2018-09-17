@@ -38,14 +38,14 @@ module.exports = function ({ setTimeout, respond }) {
         return
       }
 
-      handleMessageWithParties(data, data, respond)
+      handleMessageWithParties(data, respond)
       read(null, next)
     })
   }
 }
 
 function handleMessage ({ startTime, partiesData, setTimeout }) {
-  return (originalEvent, event = {}, respond) => {
+  return (event = {}, respond) => {
     const { type: eventType, party: partyId, parties, success } = event
     log('Request received:', serialize(event))
 
@@ -55,7 +55,7 @@ function handleMessage ({ startTime, partiesData, setTimeout }) {
         break
       case HEALTH:
         const status = getStatusEvent(partiesData, partyId)
-        typeof status !== 'undefined' && respond(originalEvent, status)
+        typeof status !== 'undefined' && respond(event, status)
         break
     }
   }

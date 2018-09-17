@@ -1,9 +1,6 @@
 'use strict'
 
-const {
-  serialize,
-  log: logger
-} = require('./utils')
+const logger = require('./logger')
 
 const {
   NODE_ENV,
@@ -47,7 +44,7 @@ module.exports = function ({ setTimeout, respond }) {
 function handleMessage ({ startTime, partiesData, setTimeout }) {
   return (event = {}, respond) => {
     const { type: eventType, party: partyId, parties, success } = event
-    log('Request received:', serialize(event))
+    log('Request received:', event)
 
     switch (eventType) {
       case PAYMENT:

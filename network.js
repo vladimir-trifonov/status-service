@@ -1,9 +1,6 @@
 'use strict'
 
-const {
-  serialize,
-  log: logger
-} = require('./utils')
+const logger = require('./logger')
 
 module.exports.createSource = createSource
 module.exports.respond = respond
@@ -57,5 +54,5 @@ function createSource (end, cb) {
 }
 
 function respond (src, res) {
-  log('Response received:', serialize(res), 'for event:', serialize(src))
+  log('Response received:', res, 'for event:', src)
 }
